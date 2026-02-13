@@ -814,6 +814,11 @@ static int process_testNonExistingExecutable(void *arg)
 
 static int process_testBatBadButVulnerability(void *arg)
 {
+#ifndef SDL_PLATFORM_WINDOWS
+    SDLTest_AssertPass("The BatBadBut vulnerability only applied to Windows");
+    return TEST_SKIPPED;
+#else
+
     TestProcessData *data = (TestProcessData *)arg;
     char *inject_arg = NULL;
     char **process_args = NULL;
@@ -824,10 +829,6 @@ static int process_testBatBadButVulnerability(void *arg)
     SDL_IOStream *child_bat;
     char buffer[256];
 
-#ifndef SDL_PLATFORM_WINDOWS
-    SDLTest_AssertPass("The BatBadBut vulnerability only applied to Windows");
-    return TEST_SKIPPED;
-#endif
     /* FIXME: remove child.bat at end of loop and/or create in temporary directory */
     child_bat = SDL_IOFromFile("child_batbadbut.bat", "w");
     SDL_IOprintf(child_bat, "@echo off\necho Hello from child_batbadbut.bat\necho \"|bat1=%%1|\"\n");
@@ -863,6 +864,7 @@ cleanup:
     SDL_free(inject_arg);
     DestroyStringArray(process_args);
     return TEST_COMPLETED;
+#endif
 }
 
 static int process_testFileRedirection(void *arg)
@@ -975,6 +977,11 @@ cleanup:
 
 static int process_testWindowsCmdline(void *arg)
 {
+#ifndef SDL_PLATFORM_WINDOWS
+    SDLTest_AssertPass("SDL_PROP_PROCESS_CREATE_CMDLINE_STRING only works on Windows");
+    return TEST_SKIPPED;
+#else
+
     TestProcessData *data = (TestProcessData *)arg;
     const char *process_args[] = {
         data->childprocess_path,
@@ -1016,11 +1023,6 @@ static int process_testWindowsCmdline(void *arg)
     int exit_code;
     int i;
     size_t total_read = 0;
-
-#ifndef SDL_PLATFORM_WINDOWS
-    SDLTest_AssertPass("SDL_PROP_PROCESS_CREATE_CMDLINE_STRING only works on Windows");
-    return TEST_SKIPPED;
-#endif
 
     props = SDL_CreateProperties();
     SDLTest_AssertCheck(props != 0, "SDL_CreateProperties()");
@@ -1067,10 +1069,16 @@ static int process_testWindowsCmdline(void *arg)
 failed:
     SDL_DestroyProcess(process);
     return TEST_ABORTED;
+#endif
 }
 
 static int process_testWindowsCmdlinePrecedence(void *arg)
 {
+#ifndef SDL_PLATFORM_WINDOWS
+    SDLTest_AssertPass("SDL_PROP_PROCESS_CREATE_CMDLINE_STRING only works on Windows");
+    return TEST_SKIPPED;
+#else
+
     TestProcessData *data = (TestProcessData *)arg;
     const char *process_args[] = {
         data->childprocess_path,
@@ -1086,11 +1094,6 @@ static int process_testWindowsCmdlinePrecedence(void *arg)
     char *buffer;
     int exit_code;
     size_t total_read = 0;
-
-#ifndef SDL_PLATFORM_WINDOWS
-    SDLTest_AssertPass("SDL_PROP_PROCESS_CREATE_CMDLINE_STRING only works on Windows");
-    return TEST_SKIPPED;
-#endif
 
     props = SDL_CreateProperties();
     SDLTest_AssertCheck(props != 0, "SDL_CreateProperties()");
@@ -1130,6 +1133,7 @@ static int process_testWindowsCmdlinePrecedence(void *arg)
 failed:
     SDL_DestroyProcess(process);
     return TEST_ABORTED;
+#endif
 }
 
 static const SDLTest_TestCaseReference processTestArguments = {

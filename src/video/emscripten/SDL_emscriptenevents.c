@@ -868,7 +868,7 @@ static void Emscripten_HandlePenEnter(SDL_WindowData *window_data, const Emscrip
 
     SDL_PenID pen = SDL_FindPenByHandle((void *) (size_t) 1);  // something > 0 for the single pen handle.
     if (pen) {
-        SDL_SendPenProximity(0, pen, window_data->window, true);
+        SDL_SendPenProximity(0, pen, window_data->window, true, true);
     } else {
         // Web browsers offer almost none of this information as specifics, but can without warning offer any of these specific things.
         SDL_PenInfo peninfo;
@@ -902,7 +902,7 @@ static void Emscripten_HandlePenLeave(SDL_WindowData *window_data, const Emscrip
     const SDL_PenID pen = SDL_FindPenByHandle((void *) (size_t) 1);   // something > 0 for the single pen handle.
     if (pen) {
         Emscripten_UpdatePointerFromEvent(window_data, event);  // last data updates?
-        SDL_SendPenProximity(0, pen, window_data->window, false);
+        SDL_SendPenProximity(0, pen, window_data->window, false, false);
     }
 }
 
@@ -957,9 +957,6 @@ EMSCRIPTEN_KEEPALIVE void Emscripten_HandlePointerGeneric(SDL_WindowData *window
 static void Emscripten_prep_pointer_event_callbacks(void)
 {
     MAIN_THREAD_EM_ASM({
-        if (typeof(Module['SDL3']) === 'undefined') {
-            Module['SDL3'] = {};
-        }
         var SDL3 = Module['SDL3'];
 
         if (SDL3.makePointerEventCStruct === undefined) {
@@ -977,11 +974,7 @@ static void Emscripten_prep_pointer_event_callbacks(void)
 
                 var ptr = _SDL_malloc($0);
                 if (ptr != 0) {
-                    #ifdef __wasm32__
-                    var idx = ptr >> 2;
-                    #elif __wasm64__
-                    var idx = Number(ptr / 4n);
-                    #endif
+                    var idx = SDL3.CPtrToHeap32Index(ptr);
                     HEAP32[idx++] = ptrtype;
                     HEAP32[idx++] = event.pointerId;
                     HEAP32[idx++] = (typeof(event.button) !== "undefined") ? event.button : -1;
@@ -1019,11 +1012,7 @@ static void Emscripten_set_pointer_event_callbacks(SDL_WindowData *data)
                 var d = SDL3.makePointerEventCStruct(rect.left, rect.top, event);
                 if (d != 0)
                 {
-                    #ifdef  __wasm32__
-                    _Emscripten_HandlePointerEnter(data, d);
-                    #elif __wasm64__
-                    _Emscripten_HandlePointerEnter(BigInt(data), d);
-                    #endif
+                    _Emscripten_HandlePointerEnter(SDL3.JSVarToCPtr(data), d);
                     _SDL_free(d);
                 }
             };
@@ -1032,11 +1021,7 @@ static void Emscripten_set_pointer_event_callbacks(SDL_WindowData *data)
                 var d = SDL3.makePointerEventCStruct(rect.left, rect.top, event);
                 if (d != 0)
                 {
-                    #ifdef __wasm32__
-                        _Emscripten_HandlePointerLeave(data, d);
-                    #elif __wasm64__
-                        _Emscripten_HandlePointerLeave(BigInt(data), d);
-                    #endif
+                    _Emscripten_HandlePointerLeave(SDL3.JSVarToCPtr(data), d);
                     _SDL_free(d);
                 }
             };
@@ -1045,11 +1030,7 @@ static void Emscripten_set_pointer_event_callbacks(SDL_WindowData *data)
                 var d = SDL3.makePointerEventCStruct(rect.left, rect.top, event);
                 if (d != 0)
                 {
-                    #ifdef __wasm32__
-                        _Emscripten_HandlePointerGeneric(data, d);
-                    #elif __wasm64__
-                        _Emscripten_HandlePointerGeneric(BigInt(data), d);
-                    #endif
+                    _Emscripten_HandlePointerGeneric(SDL3.JSVarToCPtr(data), d);
                     _SDL_free(d);
                 }
             };
@@ -1107,11 +1088,7 @@ static void Emscripten_set_global_mouseup_callback(SDL_VideoDevice *device)
                 var d = SDL3.makePointerEventCStruct(0, 0, event);
                 if (d != 0)
                 {
-                    #ifdef __wasm32__
-                    _Emscripten_HandleMouseButtonUpGlobal($0, d);
-                    #elif __wasm64__
-                    _Emscripten_HandleMouseButtonUpGlobal(BigInt($0), d);
-                    #endif
+                    _Emscripten_HandleMouseButtonUpGlobal(SDL3.JSVarToCPtr($0), d);
                     _SDL_free(d);
                 }
             };
@@ -1166,10 +1143,6 @@ static void Emscripten_set_drag_event_callbacks(SDL_WindowData *data)
         var target = document.querySelector(UTF8ToString($1));
         if (target) {
             var data = $0;
-
-            if (typeof(Module['SDL3']) === 'undefined') {
-                Module['SDL3'] = {};
-            }
             var SDL3 = Module['SDL3'];
 
             var makeDropEventCStruct = function(event) {
@@ -1191,13 +1164,17 @@ static void Emscripten_set_drag_event_callbacks(SDL_WindowData *data)
             target.addEventListener("dragover", SDL3.eventHandlerDropDragover);
 
             SDL3.drop_count = 0;
-            FS.mkdir("/tmp/filedrop");
+
+            // FS.* functions throw exceptions when there are errors (such as the temp dir already existing),
+            //  but we ignore all of these in a catch handler; you just won't get the drop event if there's a problem.
+            try { FS.mkdir("/tmp/filedrop"); } catch (e) {}
+
             SDL3.eventHandlerDropDrop = function(event) {
                 event.preventDefault();
                 if (event.dataTransfer.types.includes("text/plain")) {
                     let plain_text = stringToNewUTF8(event.dataTransfer.getData("text/plain"));
                     _Emscripten_SendDragTextEvent(data, plain_text);
-                    _free(plain_text);
+                    _Emscripten_force_free(plain_text);
                 } else if (event.dataTransfer.types.includes("Files")) {
                     let files_read = 0;
                     const files_to_read = event.dataTransfer.files.length;
@@ -1213,13 +1190,16 @@ static void Emscripten_set_drag_event_callbacks(SDL_WindowData *data)
                             const c_fs_filepath = stringToNewUTF8(fs_filepath);
                             const contents_array8 = new Uint8Array(event.target.result);
 
-                            FS.mkdir(fs_dropdir);
-                            var stream = FS.open(fs_filepath, "w");
-                            FS.write(stream, contents_array8, 0, contents_array8.length, 0);
-                            FS.close(stream);
-
-                            _Emscripten_SendDragFileEvent(data, c_fs_filepath);
-                            _free(c_fs_filepath);
+                            try {
+                                FS.mkdir(fs_dropdir);
+                                var stream = FS.open(fs_filepath, "w");
+                                FS.write(stream, contents_array8, 0, contents_array8.length, 0);
+                                FS.close(stream);
+                                _Emscripten_SendDragFileEvent(data, c_fs_filepath);
+                            } catch (e) {
+                                // if this threw an exception at any point, we skip this drop event. Sorry!
+                            }
+                            _Emscripten_force_free(c_fs_filepath);
                             onFileRead();
                         };
                         file_reader.onerror = function(event) {
@@ -1355,11 +1335,7 @@ void Emscripten_RegisterEventHandlers(SDL_WindowData *data)
                 // don't try to adjust the state on the actual lock key presses; the normal key handler will catch that and adjust.
                 if ((event.key != "CapsLock") && (event.key != "NumLock") && (event.key != "ScrollLock"))
                 {
-                    #ifdef __wasm32__
-                        _Emscripten_HandleLockKeysCheck(data, event.getModifierState("CapsLock"), event.getModifierState("NumLock"), event.getModifierState("ScrollLock"));
-                    #elif __wasm64__
-                        _Emscripten_HandleLockKeysCheck(BigInt(data), event.getModifierState("CapsLock"), event.getModifierState("NumLock"), event.getModifierState("ScrollLock"));
-                    #endif
+                    _Emscripten_HandleLockKeysCheck(Module['SDL3'].JSVarToCPtr(data), event.getModifierState("CapsLock"), event.getModifierState("NumLock"), event.getModifierState("ScrollLock"));
                 }
             };
             document.addEventListener("keydown", document.sdlEventHandlerLockKeysCheck);
