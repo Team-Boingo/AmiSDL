@@ -32,8 +32,6 @@
 /* Define this if you want to log all packets from the controller */
 /*#define DEBUG_HORI_PROTOCOL*/
 
-#define LOAD16(A, B) (Sint16)((Uint16)(A) | (((Uint16)(B)) << 8))
-
 enum
 {
     SDL_GAMEPAD_BUTTON_HORI_QAM = 11,
@@ -205,7 +203,7 @@ static void HIDAPI_DriverSteamHori_HandleStatePacket(SDL_Joystick *joystick, SDL
         return;
     }
 
-    #define READ_STICK_AXIS(offset) \
+#define READ_STICK_AXIS(offset) \
     (data[offset] == 0x80 ? 0 : (Sint16)HIDAPI_RemapVal((float)((int)data[offset] - 0x80), -0x80, 0xff - 0x80, SDL_MIN_SINT16, SDL_MAX_SINT16))
     {
         axis = READ_STICK_AXIS(1);
