@@ -213,7 +213,9 @@ SDL_SystemTheme UIKit_GetSystemTheme(void)
 #ifdef SDL_PLATFORM_VISIONOS
 CGRect UIKit_ComputeViewFrame(SDL_Window *window)
 {
-    return CGRectMake(window->x, window->y, window->w, window->h);
+    // View origin is always (0,0) relative to the UIWindow.
+    // window->x/y are screen-level positions (often SDL_WINDOWPOS_UNDEFINED).
+    return CGRectMake(0, 0, window->w, window->h);
 }
 #else
 CGRect UIKit_ComputeViewFrame(SDL_Window *window, UIScreen *screen)
@@ -237,7 +239,10 @@ CGRect UIKit_ComputeViewFrame(SDL_Window *window, UIScreen *screen)
      * https://bugzilla.libsdl.org/show_bug.cgi?id=3505
      * https://bugzilla.libsdl.org/show_bug.cgi?id=3465
      * https://forums.developer.apple.com/thread/65337 */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     UIInterfaceOrientation orient = [UIApplication sharedApplication].statusBarOrientation;
+#pragma clang diagnostic pop
     BOOL landscape = UIInterfaceOrientationIsLandscape(orient) ||
                     !(UIKit_GetSupportedOrientations(window) & (UIInterfaceOrientationMaskPortrait | UIInterfaceOrientationMaskPortraitUpsideDown));
     BOOL fullscreen = CGRectEqualToRect(screen.bounds, frame);
