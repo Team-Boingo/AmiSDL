@@ -1330,7 +1330,7 @@ SDL_Renderer *SDL_CreateSoftwareRenderer(SDL_Surface *surface)
 #else
     SDL_SetError("SDL not built with rendering support");
     return NULL;
-#endif // !SDL_RENDER_DISABLED
+#endif // SDL_VIDEO_RENDER_SW
 }
 
 SDL_Renderer *SDL_GetRenderer(SDL_Window *window)
@@ -3907,6 +3907,8 @@ bool SDL_RenderLines(SDL_Renderer *renderer, const SDL_FPoint *points, int count
                     }
                 }
 
+#undef ADD_TRIANGLE
+
                 p = q;
                 cur_index += 4;
             }
@@ -6218,6 +6220,72 @@ SDL_GPURenderState *SDL_CreateGPURenderState(SDL_Renderer *renderer, const SDL_G
     return state;
 }
 
+bool SDL_SetGPURenderStateSamplerBindings(SDL_GPURenderState *state, int num_sampler_bindings, const SDL_GPUTextureSamplerBinding *sampler_bindings)
+{
+    if (!state) {
+        return SDL_InvalidParamError("state");
+    }
+
+    if (!FlushRenderCommandsIfGPURenderStateNeeded(state)) {
+        return false;
+    }
+
+    Sint32 length = sizeof(SDL_GPUTextureSamplerBinding) * num_sampler_bindings;
+    SDL_GPUTextureSamplerBinding *new_sampler_bindings = (SDL_GPUTextureSamplerBinding *)SDL_realloc(state->sampler_bindings, length);
+    if (!new_sampler_bindings) {
+        return false;
+    }
+    SDL_memcpy(new_sampler_bindings, sampler_bindings, length);
+    state->num_sampler_bindings = num_sampler_bindings;
+    state->sampler_bindings = new_sampler_bindings;
+
+    return true;
+}
+
+bool SDL_SetGPURenderStateStorageTextures(SDL_GPURenderState *state, int num_storage_textures, SDL_GPUTexture *const *storage_textures)
+{
+    if (!state) {
+        return SDL_InvalidParamError("state");
+    }
+
+    if (!FlushRenderCommandsIfGPURenderStateNeeded(state)) {
+        return false;
+    }
+
+    Sint32 length = sizeof(SDL_GPUTexture *) * num_storage_textures;
+    SDL_GPUTexture **new_storage_textures = (SDL_GPUTexture **)SDL_realloc(state->storage_textures, length);
+    if (!new_storage_textures) {
+        return false;
+    }
+    SDL_memcpy(new_storage_textures, storage_textures, length);
+    state->num_storage_textures = num_storage_textures;
+    state->storage_textures = new_storage_textures;
+
+    return true;
+}
+
+bool SDL_SetGPURenderStateStorageBuffers(SDL_GPURenderState *state, int num_storage_buffers, SDL_GPUBuffer *const *storage_buffers)
+{
+    if (!state) {
+        return SDL_InvalidParamError("state");
+    }
+
+    if (!FlushRenderCommandsIfGPURenderStateNeeded(state)) {
+        return false;
+    }
+
+    Sint32 length = sizeof(SDL_GPUBuffer *) * num_storage_buffers;
+    SDL_GPUBuffer **new_storage_buffers = (SDL_GPUBuffer **)SDL_realloc(state->storage_buffers, length);
+    if (!new_storage_buffers) {
+        return false;
+    }
+    SDL_memcpy(new_storage_buffers, storage_buffers, length);
+    state->num_storage_buffers = num_storage_buffers;
+    state->storage_buffers = new_storage_buffers;
+
+    return true;
+}
+
 bool SDL_SetGPURenderStateFragmentUniforms(SDL_GPURenderState *state, Uint32 slot_index, const void *data, Uint32 length)
 {
     if (!state) {
@@ -6289,3 +6357,23 @@ void SDL_DestroyGPURenderState(SDL_GPURenderState *state)
     SDL_free(state->storage_buffers);
     SDL_free(state);
 }
+
+#ifdef SDL_PLATFORM_GDK
+
+void SDLCALL SDL_GDKSuspendRenderer(SDL_Renderer *renderer)
+{
+    CHECK_RENDERER_MAGIC(renderer,);
+    if (renderer->GDKSuspendRenderer != NULL) {
+        renderer->GDKSuspendRenderer(renderer);
+    }
+}
+
+void SDLCALL SDL_GDKResumeRenderer(SDL_Renderer *renderer)
+{
+    CHECK_RENDERER_MAGIC(renderer,);
+    if (renderer->GDKResumeRenderer != NULL) {
+        renderer->GDKResumeRenderer(renderer);
+    }
+}
+
+#endif /* SDL_PLATFORM_GDK */

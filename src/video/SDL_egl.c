@@ -1115,7 +1115,10 @@ SDL_GLContext SDL_EGL_CreateContext(SDL_VideoDevice *_this, EGLSurface egl_surfa
     } else {
         _this->egl_data->apitype = EGL_OPENGL_API;
     }
-    _this->egl_data->eglBindAPI(_this->egl_data->apitype);
+    if (!_this->egl_data->eglBindAPI(_this->egl_data->apitype)) {
+        SDL_SetError("Could not bind EGL API");
+        return NULL;
+    }
 
     egl_context = _this->egl_data->eglCreateContext(_this->egl_data->egl_display,
                                                     _this->egl_data->egl_config,
@@ -1291,7 +1294,7 @@ EGLSurface SDL_EGL_CreateSurface(SDL_VideoDevice *_this, SDL_Window *window, Nat
 
 #ifdef EGL_KHR_gl_colorspace
     if (SDL_EGL_HasExtension(_this, SDL_EGL_DISPLAY_EXTENSION, "EGL_KHR_gl_colorspace")) {
-        const char *srgbhint = SDL_GetHint(SDL_HINT_OPENGL_FORCE_SRGB_CAPABLE);
+        const char *srgbhint = SDL_GetHint(SDL_HINT_OPENGL_FORCE_SRGB_FRAMEBUFFER);
         if (srgbhint && *srgbhint) {
             if (SDL_strcmp(srgbhint, "skip") == 0) {
                 // don't set an attribute at all.

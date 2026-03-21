@@ -380,8 +380,9 @@ char **SDL_InternalGlobDirectory(const char *path, const char *pattern, SDL_Glob
             return NULL;
         }
         char *ptr = &pathcpy[pathlen-1];
-        while ((ptr >= pathcpy) && ((*ptr == '/') || (*ptr == '\\'))) {
+        while ((ptr > pathcpy) && ((*ptr == '/') || (*ptr == '\\'))) {
             *(ptr--) = '\0';
+            --pathlen;
         }
         path = pathcpy;
     }
@@ -426,22 +427,14 @@ char **SDL_InternalGlobDirectory(const char *path, const char *pattern, SDL_Glob
     data.getpathinfo = getpathinfo;
     data.fsuserdata = userdata;
 
-    int extra = 1;
-
-    #ifdef SDL_PLATFORM_AMIGAOS4
-    {
-        const size_t len = SDL_strlen(path);
-        if (len > 0) {
-            if (path[len - 1] == ':') {
-                extra = 0;
-            }
+    data.basedirlen = 0;
+    if (*path) {
+        if (SDL_strcmp(path, "/") == 0 || SDL_strcmp(path, "\\") == 0) {
+            data.basedirlen = 1;
+        } else {
+            data.basedirlen = pathlen + 1; // +1 for the '/' we'll be adding.
         }
-
     }
-    #endif
-
-    data.basedirlen = *path ? (SDL_strlen(path) + extra) : 0;  // +1 for the '/' we'll be adding.
-
 
     char **result = NULL;
     if (data.enumerator(path, GlobDirectoryCallback, &data, data.fsuserdata)) {
