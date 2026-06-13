@@ -18,6 +18,7 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
+
 #include "SDL_internal.h"
 
 #ifdef SDL_THREAD_DOS
@@ -33,7 +34,7 @@ static SDL_TLSData *tls_data[DOS_MAX_THREADS];
 
 void SDL_SYS_InitTLSData(void)
 {
-    SDL_memset(tls_data, 0, sizeof(tls_data));
+    SDL_zeroa(tls_data);
 }
 
 SDL_TLSData *SDL_SYS_GetTLSData(void)
@@ -57,7 +58,7 @@ bool SDL_SYS_SetTLSData(SDL_TLSData *data)
 
 void SDL_SYS_QuitTLSData(void)
 {
-    SDL_memset(tls_data, 0, sizeof(tls_data));
+    SDL_zeroa(tls_data);
 }
 
 #endif /* SDL_THREAD_DOS */
