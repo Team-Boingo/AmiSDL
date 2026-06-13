@@ -49,6 +49,7 @@ SOURCES = \
 	./src/main/SDL_runapp.c \
 	./src/misc/*.c \
 	./src/misc/amigaos4/*.c \
+	./src/notification/dummy/SDL_dummynotification.c \
 	./src/power/*.c \
 	./src/process/*.c \
 	./src/process/amigaos4/*.c \

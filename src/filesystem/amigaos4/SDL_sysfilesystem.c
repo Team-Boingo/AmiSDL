@@ -96,6 +96,11 @@ char *SDL_SYS_GetBasePath(void)
     return buffer;
 }
 
+char *SDL_SYS_GetExeName(void)
+{
+    return NULL; // TODO: implement me
+}
+
 char *SDL_SYS_GetPrefPath(const char *org, const char *app)
 {
     const char* const envPath = "ENVARC:";
