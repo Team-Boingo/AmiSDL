@@ -1247,6 +1247,7 @@ static bool SetCopyState(SDL_Renderer *renderer, const SDL_RenderCommand *cmd, v
 #ifdef SDL_HAVE_YUV
             case SDL_PIXELFORMAT_IYUV:
             case SDL_PIXELFORMAT_YV12:
+            case SDL_PIXELFORMAT_P408:
                 sourceType = GLES2_IMAGESOURCE_TEXTURE_YUV;
                 break;
             case SDL_PIXELFORMAT_NV12:
@@ -1285,6 +1286,7 @@ static bool SetCopyState(SDL_Renderer *renderer, const SDL_RenderCommand *cmd, v
 #ifdef SDL_HAVE_YUV
         case SDL_PIXELFORMAT_IYUV:
         case SDL_PIXELFORMAT_YV12:
+        case SDL_PIXELFORMAT_P408:
             sourceType = GLES2_IMAGESOURCE_TEXTURE_YUV;
             break;
         case SDL_PIXELFORMAT_NV12:
@@ -1747,6 +1749,7 @@ static bool GLES2_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
 #ifdef SDL_HAVE_YUV
     case SDL_PIXELFORMAT_IYUV:
     case SDL_PIXELFORMAT_YV12:
+    case SDL_PIXELFORMAT_P408:
     case SDL_PIXELFORMAT_NV12:
     case SDL_PIXELFORMAT_NV21:
 #endif
@@ -1785,7 +1788,7 @@ static bool GLES2_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
     data->pixel_format = format;
     data->pixel_type = type;
 #ifdef SDL_HAVE_YUV
-    data->yuv = ((texture->format == SDL_PIXELFORMAT_IYUV) || (texture->format == SDL_PIXELFORMAT_YV12));
+    data->yuv = ((texture->format == SDL_PIXELFORMAT_IYUV) || (texture->format == SDL_PIXELFORMAT_YV12) || (texture->format == SDL_PIXELFORMAT_P408));
     data->nv12 = ((texture->format == SDL_PIXELFORMAT_NV12) || (texture->format == SDL_PIXELFORMAT_NV21));
 #endif
     data->texture_scale_mode = texture->scaleMode;
@@ -1800,7 +1803,11 @@ static bool GLES2_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
 #ifdef SDL_HAVE_YUV
         if (data->yuv) {
             // Need to add size for the U and V planes
-            size += 2 * ((texture->h + 1) / 2) * ((data->pitch + 1) / 2);
+            if (texture->format == SDL_PIXELFORMAT_P408) {
+                size += 2 * texture->h * data->pitch;
+            } else {
+                size += 2 * ((texture->h + 1) / 2) * ((data->pitch + 1) / 2);
+            }
         } else if (data->nv12) {
             // Need to add size for the U/V plane
             size += 2 * ((texture->h + 1) / 2) * ((data->pitch + 1) / 2);
@@ -1823,6 +1830,15 @@ static bool GLES2_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
 
 #ifdef SDL_HAVE_YUV
     if (data->yuv) {
+        int yuv_texture_w, yuv_texture_h;
+        if (texture->format == SDL_PIXELFORMAT_P408) {
+            yuv_texture_w = texture->w;
+            yuv_texture_h = texture->h;
+        } else {
+            yuv_texture_w = (texture->w + 1) / 2;
+            yuv_texture_h = (texture->h + 1) / 2;
+        }
+
         data->texture_v = (GLuint)SDL_GetNumberProperty(create_props, SDL_PROP_TEXTURE_CREATE_OPENGLES2_TEXTURE_V_NUMBER, 0);
         if (data->texture_v) {
             data->texture_v_external = true;
@@ -1836,7 +1852,7 @@ static bool GLES2_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
         }
         renderdata->myglActiveTexture(GL_TEXTURE2);
         renderdata->myglBindTexture(data->texture_type, data->texture_v);
-        renderdata->myglTexImage2D(data->texture_type, 0, format, (texture->w + 1) / 2, (texture->h + 1) / 2, 0, format, type, NULL);
+        renderdata->myglTexImage2D(data->texture_type, 0, format, yuv_texture_w, yuv_texture_h, 0, format, type, NULL);
         if (!GL_CheckError("glTexImage2D()", renderer)) {
             SDL_free(data->pixel_data);
             SDL_free(data);
@@ -1859,7 +1875,7 @@ static bool GLES2_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture, SD
         }
         renderdata->myglActiveTexture(GL_TEXTURE1);
         renderdata->myglBindTexture(data->texture_type, data->texture_u);
-        renderdata->myglTexImage2D(data->texture_type, 0, format, (texture->w + 1) / 2, (texture->h + 1) / 2, 0, format, type, NULL);
+        renderdata->myglTexImage2D(data->texture_type, 0, format, yuv_texture_w, yuv_texture_h, 0, format, type, NULL);
         if (!GL_CheckError("glTexImage2D()", renderer)) {
             SDL_free(data->pixel_data);
             SDL_free(data);
@@ -2017,37 +2033,59 @@ static bool GLES2_UpdateTexture(SDL_Renderer *renderer, SDL_Texture *texture, co
 
 #ifdef SDL_HAVE_YUV
     if (tdata->yuv) {
-        // Skip to the correct offset into the next texture
-        pixels = (const void *)((const Uint8 *)pixels + rect->h * pitch);
-        if (texture->format == SDL_PIXELFORMAT_YV12) {
-            data->myglBindTexture(tdata->texture_type, tdata->texture_v);
-        } else {
+        if (texture->format == SDL_PIXELFORMAT_P408) {
+            // Skip to the correct offset into the next texture
+            pixels = (const void *)((const Uint8 *)pixels + rect->h * pitch);
             data->myglBindTexture(tdata->texture_type, tdata->texture_u);
-        }
-        GLES2_TexSubImage2D(data, tdata->texture_type,
-                            rect->x / 2,
-                            rect->y / 2,
-                            (rect->w + 1) / 2,
-                            (rect->h + 1) / 2,
-                            tdata->pixel_format,
-                            tdata->pixel_type,
-                            pixels, (pitch + 1) / 2, 1);
+            GLES2_TexSubImage2D(data, tdata->texture_type,
+                                rect->x, rect->y,
+                                rect->w, rect->h,
+                                tdata->pixel_format,
+                                tdata->pixel_type,
+                                pixels, pitch, 1);
 
-        // Skip to the correct offset into the next texture
-        pixels = (const void *)((const Uint8 *)pixels + ((rect->h + 1) / 2) * ((pitch + 1) / 2));
-        if (texture->format == SDL_PIXELFORMAT_YV12) {
-            data->myglBindTexture(tdata->texture_type, tdata->texture_u);
-        } else {
+            // Skip to the correct offset into the next texture
+            pixels = (const void *)((const Uint8 *)pixels + rect->h * pitch);
             data->myglBindTexture(tdata->texture_type, tdata->texture_v);
+            GLES2_TexSubImage2D(data, tdata->texture_type,
+                                rect->x, rect->y,
+                                rect->w, rect->h,
+                                tdata->pixel_format,
+                                tdata->pixel_type,
+                                pixels, pitch, 1);
+        } else {
+            // Skip to the correct offset into the next texture
+            pixels = (const void *)((const Uint8 *)pixels + rect->h * pitch);
+            if (texture->format == SDL_PIXELFORMAT_YV12) {
+                data->myglBindTexture(tdata->texture_type, tdata->texture_v);
+            } else {
+                data->myglBindTexture(tdata->texture_type, tdata->texture_u);
+            }
+            GLES2_TexSubImage2D(data, tdata->texture_type,
+                                rect->x / 2,
+                                rect->y / 2,
+                                (rect->w + 1) / 2,
+                                (rect->h + 1) / 2,
+                                tdata->pixel_format,
+                                tdata->pixel_type,
+                                pixels, (pitch + 1) / 2, 1);
+
+            // Skip to the correct offset into the next texture
+            pixels = (const void *)((const Uint8 *)pixels + ((rect->h + 1) / 2) * ((pitch + 1) / 2));
+            if (texture->format == SDL_PIXELFORMAT_YV12) {
+                data->myglBindTexture(tdata->texture_type, tdata->texture_u);
+            } else {
+                data->myglBindTexture(tdata->texture_type, tdata->texture_v);
+            }
+            GLES2_TexSubImage2D(data, tdata->texture_type,
+                                rect->x / 2,
+                                rect->y / 2,
+                                (rect->w + 1) / 2,
+                                (rect->h + 1) / 2,
+                                tdata->pixel_format,
+                                tdata->pixel_type,
+                                pixels, (pitch + 1) / 2, 1);
         }
-        GLES2_TexSubImage2D(data, tdata->texture_type,
-                            rect->x / 2,
-                            rect->y / 2,
-                            (rect->w + 1) / 2,
-                            (rect->h + 1) / 2,
-                            tdata->pixel_format,
-                            tdata->pixel_type,
-                            pixels, (pitch + 1) / 2, 1);
     } else if (tdata->nv12) {
         // Skip to the correct offset into the next texture
         pixels = (const void *)((const Uint8 *)pixels + rect->h * pitch);
@@ -2085,25 +2123,43 @@ static bool GLES2_UpdateTextureYUV(SDL_Renderer *renderer, SDL_Texture *texture,
 
     data->drawstate.texture = NULL; // we trash this state.
 
-    data->myglBindTexture(tdata->texture_type, tdata->texture_v);
-    GLES2_TexSubImage2D(data, tdata->texture_type,
-                        rect->x / 2,
-                        rect->y / 2,
-                        (rect->w + 1) / 2,
-                        (rect->h + 1) / 2,
-                        tdata->pixel_format,
-                        tdata->pixel_type,
-                        Vplane, Vpitch, 1);
+    if (texture->format == SDL_PIXELFORMAT_P408) {
+        data->myglBindTexture(tdata->texture_type, tdata->texture_v);
+        GLES2_TexSubImage2D(data, tdata->texture_type,
+                            rect->x, rect->y,
+                            rect->w, rect->h,
+                            tdata->pixel_format,
+                            tdata->pixel_type,
+                            Vplane, Vpitch, 1);
 
-    data->myglBindTexture(tdata->texture_type, tdata->texture_u);
-    GLES2_TexSubImage2D(data, tdata->texture_type,
-                        rect->x / 2,
-                        rect->y / 2,
-                        (rect->w + 1) / 2,
-                        (rect->h + 1) / 2,
-                        tdata->pixel_format,
-                        tdata->pixel_type,
-                        Uplane, Upitch, 1);
+        data->myglBindTexture(tdata->texture_type, tdata->texture_u);
+        GLES2_TexSubImage2D(data, tdata->texture_type,
+                            rect->x, rect->y,
+                            rect->w, rect->h,
+                            tdata->pixel_format,
+                            tdata->pixel_type,
+                            Uplane, Upitch, 1);
+    } else {
+        data->myglBindTexture(tdata->texture_type, tdata->texture_v);
+        GLES2_TexSubImage2D(data, tdata->texture_type,
+                            rect->x / 2,
+                            rect->y / 2,
+                            (rect->w + 1) / 2,
+                            (rect->h + 1) / 2,
+                            tdata->pixel_format,
+                            tdata->pixel_type,
+                            Vplane, Vpitch, 1);
+
+        data->myglBindTexture(tdata->texture_type, tdata->texture_u);
+        GLES2_TexSubImage2D(data, tdata->texture_type,
+                            rect->x / 2,
+                            rect->y / 2,
+                            (rect->w + 1) / 2,
+                            (rect->h + 1) / 2,
+                            tdata->pixel_format,
+                            tdata->pixel_type,
+                            Uplane, Upitch, 1);
+    }
 
     data->myglBindTexture(tdata->texture_type, tdata->texture);
     GLES2_TexSubImage2D(data, tdata->texture_type,
@@ -2414,6 +2470,7 @@ static bool GLES2_CreateRenderer(SDL_Renderer *renderer, SDL_Window *window, SDL
 #ifdef SDL_HAVE_YUV
     SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_YV12);
     SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_IYUV);
+    SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_P408);
     SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_NV12);
     SDL_AddSupportedTextureFormat(renderer, SDL_PIXELFORMAT_NV21);
 #endif
